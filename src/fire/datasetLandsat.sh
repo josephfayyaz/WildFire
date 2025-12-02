@@ -22,4 +22,4 @@ source ~/thesis-wildfire-danger-bavaro/.venv/bin/activate
 # Esegui lo script Python per la preparazione del dataset
 # Assicurati che questo percorso sia corretto rispetto alla directory da cui sottometti il job.
 # Se sottometti da '~/thesis-wildfire-danger-bavaro/', allora il percorso è relativo.
-python src/project_name/generateDem.py
+python src/fire/generate_landsat_new.py

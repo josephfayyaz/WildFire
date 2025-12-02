@@ -17,4 +17,4 @@ source /etc/profile
 source .venv/bin/activate
 
 # Esegui lo script
-python src/project_name/modelWithLandsat/main.py
+python src/fire/modelWithLandsat/main.py

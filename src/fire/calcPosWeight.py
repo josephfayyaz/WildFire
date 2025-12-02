@@ -87,11 +87,11 @@ def calculate_pos_weight(data_root_dir, fire_dirs_list=None):
 
 if __name__ == "__main__":
     # --- INIZIO MODIFICA CRUCIALE PER LA TUA STRUTTURA DI CARTELLE ---
-    # Ottieni il percorso assoluto della directory corrente dello script (es. /path/to/tuo_progetto/src/project_name/)
+    # Ottieni il percorso assoluto della directory corrente dello script (es. /path/to/tuo_progetto/src/fire/)
     current_script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Risali di due livelli per arrivare a 'tuo_progetto/'
-    # current_script_dir -> /path/to/tuo_progetto/src/project_name/
+    # current_script_dir -> /path/to/tuo_progetto/src/fire/
     # os.path.dirname(current_script_dir) -> /path/to/tuo_progetto/src/
     # os.path.dirname(os.path.dirname(current_script_dir)) -> /path/to/tuo_progetto/
     project_root_dir = os.path.dirname(os.path.dirname(current_script_dir))

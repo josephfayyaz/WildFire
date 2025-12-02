@@ -28,7 +28,7 @@ for root, dirs, files in os.walk(base_path):
             except Exception as e:
                 print(f'Errore con {file_path}: {e}')
 # Salva su CSV
-output_csv = 'src/project_name/eliminateNoData/pixel_nodata_landsat_pre.csv'
+output_csv = 'src/fire/eliminateNoData/pixel_nodata_landsat_pre.csv'
 with open(output_csv, 'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['file_path', 'pixel_nodata', 'supera_soglia_40%'])

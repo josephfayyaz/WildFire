@@ -3,9 +3,9 @@ import yaml
 import subprocess
 import os
 
-CONFIG_PATH = "src/project_name/config.yaml"
-SCRIPT_PATH = "src/project_name/satellite_pre.py"
-LOG_PATH = "src/project_name/processed_ids_pre.txt"  # file per loggare gli ID processati
+CONFIG_PATH = "src/fire/config.yaml"
+SCRIPT_PATH = "src/fire/satellite_pre.py"
+LOG_PATH = "src/fire/processed_ids_pre.txt"  # file per loggare gli ID processati
 
 # Carica config di base
 with open(CONFIG_PATH, "r") as f:

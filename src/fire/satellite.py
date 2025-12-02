@@ -12,23 +12,28 @@ import os
 import yaml
 from dateutil import parser
 
-def load_config(config_path="src/project_name/config.yaml"):
+def load_config(config_path="src/fire/config.yaml"):
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
+
+def process_sentinel(fire_geometry, fire_date, fire_id,SAVE_FOLDER, catalog,interval):
     
-def process_sentinel_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog, interval=7):
-    fire_geometry_buffered = fire_geometry.buffer(250)  # buffer in metri
+    fire_geometry_buffered = fire_geometry.buffer(250)  # 100 metri
     fire_geometry_buffered = gpd.GeoSeries([fire_geometry_buffered], crs=3857).to_crs(epsg=4326).iloc[0]
     fire_geometry = gpd.GeoSeries([fire_geometry], crs=3857).to_crs(epsg=4326).iloc[0]
 
-    start_date = fire_date - timedelta(days=interval)
-    end_date = fire_date
-    time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
-
-    print("🔥 Ricerca immagini Sentinel-2 PRE-incendio")
-    print("Data incendio:", fire_date.strftime('%Y-%m-%d'))
+    # ---------------------
+    # Intervallo di date
+    # ---------------------
+    time_range = f"{fire_date.strftime('%Y-%m-%d')}/{(fire_date + timedelta(days=interval)).strftime('%Y-%m-%d')}"
+    '''print("Bounding box dell'incendio:", fire_geometry.bounds)
+    print("Centro approssimato:", fire_geometry.centroid)'''
+    print("Data dell'incendio:", fire_date.strftime('%Y-%m-%d'))
     print("Intervallo di ricerca:", time_range)
 
+    # ---------------------
+    # Ricerca di Sentinel-2
+    # ---------------------
     search = catalog.search(
         collections=["sentinel-2-l2a"],
         bbox=fire_geometry_buffered.bounds,
@@ -36,17 +41,41 @@ def process_sentinel_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog
     )
 
     items = list(search.items())
+
+
     if not items:
-        print("❌ Nessuna immagine trovata.")
-        return
+        print("Nessuna immagine trovata per questo incendio.")
+    else:
+        print(f"Trovate {len(items)} immagini.")
 
-    print(f"✅ Trovate {len(items)} immagini.")
+        # Definizione di tutte le bande Sentinel-2 e delle loro risoluzioni native
+        sentinel2_bands = {
+            # 10m bands
+            "B02": 10, "B03": 10, "B04": 10, "B08": 10,
+            # 20m bands
+            "B05": 20, "B06": 20, "B07": 20, "B8A": 20, "B11": 20, "B12": 20,
+            # 60m bands
+            "B01": 60, "B09": 60
+        }
+        
+        # B10 è esclusa perché non esiste in Sentinel-2
 
-    sentinel2_bands = {
-        "B02": 10, "B03": 10, "B04": 10, "B08": 10,
-        "B05": 20, "B06": 20, "B07": 20, "B8A": 20, "B11": 20, "B12": 20,
-        "B01": 60, "B09": 60
-    }
+        # Funzione di resampling per ridimensionare la banda alla risoluzione di 10m
+        def resample_band(src, target_resolution=10):
+            # Calcola il fattore di ridimensionamento in base alla risoluzione
+            scale_x = src.transform[0] / target_resolution
+            scale_y = -src.transform[4] / target_resolution
+
+            # Resampling della banda alla risoluzione target
+            band_data_resampled = src.read(
+                1, resampling=Resampling.bilinear, out_shape=(
+                    int(src.height * scale_y),
+                    int(src.width * scale_x)
+                )
+            )
+
+            # Ritorna i dati della banda resampled
+            return band_data_resampled
 
     date_counts = {}
     for i, item in enumerate(items):
@@ -54,90 +83,105 @@ def process_sentinel_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog
         date_counts[base_date] = date_counts.get(base_date, 0) + 1
         suffix = f"_{date_counts[base_date]}" if date_counts[base_date] > 1 else ""
         full_date_str = f"{base_date}{suffix}"
-        print(f"\n📸 Immagine {i+1} del {full_date_str}")
+        
+        print(f"\nImmagine {i+1}: acquisita il {full_date_str}")
 
         band_arrays_resampled = []
         band_names_resampled = []
         profile = None
         window = None
 
-        # Banda di riferimento
-        reference_band = next((b for b, r in sentinel2_bands.items() if r == 10 and b in item.assets), None)
+        reference_band = None
+        for band, resolution in sentinel2_bands.items():
+            if resolution == 10 and band in item.assets:
+                reference_band = band
+                break
+
         if reference_band is None:
-            print("⚠️ Nessuna banda a 10m trovata. Skip.")
+            print("Nessuna banda a 10m disponibile. Skip.")
             continue
 
+        # Otteniamo la finestra da usare per il ritaglio
         signed_href = planetary_computer.sign(item.assets[reference_band]).href
         with rasterio.open(signed_href) as ref_src:
+            xres, yres = abs(ref_src.res[0]), abs(ref_src.res[1])
+            print(f"🛰️ Risoluzione raster banda {reference_band}: {xres:.4f}° x {yres:.4f}°")
+
             bbox_transformed = gpd.GeoSeries([fire_geometry_buffered], crs=4326).to_crs(ref_src.crs).iloc[0].bounds
             window = rasterio.windows.from_bounds(*bbox_transformed, transform=ref_src.transform)
             profile = ref_src.profile.copy()
+
             profile.update({
                 "height": int(window.height),
                 "width": int(window.width),
                 "transform": rasterio.windows.transform(window, ref_src.transform),
                 "count": len(sentinel2_bands)
             })
+
         target_height = int(window.height)
         target_width = int(window.width)
 
         for band, native_resolution in sentinel2_bands.items():
-            if band not in item.assets:
-                continue
-            signed_href = planetary_computer.sign(item.assets[band]).href
-            with rasterio.open(signed_href) as src:
-                try:
-                    if native_resolution != 10:
-                        scale = native_resolution / 10
-                        scaled_window = rasterio.windows.Window(
-                            col_off=window.col_off / scale,
-                            row_off=window.row_off / scale,
-                            width=window.width / scale,
-                            height=window.height / scale
-                        )
-                        band_data = src.read(
-                            1,
-                            window=scaled_window,
-                            out_shape=(target_height, target_width),
-                            resampling=Resampling.bilinear
-                        )
-                    else:
-                        band_data = src.read(
-                            1,
-                            window=window,
-                            out_shape=(target_height, target_width),
-                            resampling=Resampling.bilinear
-                        )
-                    if band_data.shape != (target_height, target_width):
-                        print(f"⚠️ Banda {band} ha shape {band_data.shape}, attesa {(target_height, target_width)}. Skip.")
-                        continue
-                    band_arrays_resampled.append(band_data)
-                    band_names_resampled.append(band)
-                    print(f"  ✔️ Banda {band} caricata.")
-                except Exception as e:
-                    print(f"  ❌ Errore su banda {band}: {e}")
+            if band in item.assets:
+                signed_href = planetary_computer.sign(item.assets[band]).href
+                with rasterio.open(signed_href) as src:
+                    try:
+                        if native_resolution != 10:
+                            # Scala la window in base alla risoluzione della banda
+                            scale = native_resolution / 10
+                            scaled_window = rasterio.windows.Window(
+                                col_off=window.col_off / scale,
+                                row_off=window.row_off / scale,
+                                width=window.width / scale,
+                                height=window.height / scale
+                            )
+
+                            band_data = src.read(
+                                1,
+                                window=scaled_window,
+                                out_shape=(target_height, target_width),
+                                resampling=Resampling.bilinear
+                            )
+                        else:
+                            band_data = src.read(
+                                1,
+                                window=window,
+                                out_shape=(target_height, target_width),
+                                resampling=Resampling.bilinear
+                            )
+
+                        # Check shape
+                        if band_data.shape != (target_height, target_width):
+                            print(f"  ⚠️ Banda {band} ha shape {band_data.shape}, attesa {(target_height, target_width)}. Skip.")
+                            continue
+
+                        band_arrays_resampled.append(band_data)
+                        band_names_resampled.append(band)
+                        print(f"  -> Banda {band} letta e ritagliata.")
+                    except Exception as e:
+                        print(f"  -> Errore con banda {band}: {e}")
+
+
 
         if not band_arrays_resampled:
-            print("⚠️ Nessuna banda utile trovata. Skip.")
+            print("Nessuna banda disponibile dopo ritaglio. Skip.")
             continue
 
         data_cube = np.stack(band_arrays_resampled, axis=0)
         profile.update(count=len(band_arrays_resampled))
 
-        out_path = os.path.join(SAVE_FOLDER, f"fire_{fire_id}_{full_date_str}_pre_sentinel.tif")
-        with rasterio.open(out_path, "w", **profile) as dst:
+        cube_path = os.path.join(SAVE_FOLDER, f"fire_{fire_id}_{full_date_str}_sentinel.tif")
+        with rasterio.open(cube_path, "w", **profile) as dst:
             dst.write(data_cube)
             dst.descriptions = band_names_resampled
 
-        print(f"💾 Salvato: {out_path}")
-def process_modis_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,interval):
+        print(f"✅ TIFF ritagliato salvato in: {cube_path}")
+def process_modis(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,interval):
     # Step 1: Buffer e trasformazione CRS
     fire_geometry_buffered = gpd.GeoSeries([fire_geometry.buffer(250)], crs=3857).to_crs(epsg=4326).iloc[0]
 
-    start_date = fire_date - timedelta(days=interval)
-    end_date = fire_date
-    time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
-    print("🔥 Ricerca immagini Modis PRE-incendio")
+    # Step 2: Intervallo date
+    time_range = f"{fire_date.strftime('%Y-%m-%d')}/{(fire_date + timedelta(days=interval)).strftime('%Y-%m-%d')}"
     print("Data dell'incendio:", fire_date.strftime('%Y-%m-%d'))
     print("Intervallo di ricerca:", time_range)
 
@@ -188,7 +232,7 @@ def process_modis_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,in
                     "transform": out_transform
                 })
 
-                out_path = os.path.join(SAVE_FOLDER, f"fire_{fire_id}_{date_str}_pre_modis.tif")
+                out_path = os.path.join(SAVE_FOLDER, f"fire_{fire_id}_{date_str}_modis.tif")
                 with rasterio.open(out_path, "w", **profile) as dst:
                     dst.write(data_31, 1)
                     dst.write(data_32, 2)
@@ -198,7 +242,7 @@ def process_modis_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,in
         except Exception as e:
             print(f"  ❌ Errore per {date_str}: {e}")
             continue
-def process_landsat_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,interval):
+def process_landsat(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,interval):
     fire_geometry_buffered = fire_geometry.buffer(250)  # 100 metri
     fire_geometry_buffered = gpd.GeoSeries([fire_geometry_buffered], crs=3857).to_crs(epsg=4326).iloc[0]
     fire_geometry = gpd.GeoSeries([fire_geometry], crs=3857).to_crs(epsg=4326).iloc[0]
@@ -206,9 +250,7 @@ def process_landsat_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,
     # ---------------------
     # Intervallo di date
     # ---------------------
-    start_date = fire_date - timedelta(days=interval)
-    end_date = fire_date
-    time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
+    time_range = f"{fire_date.strftime('%Y-%m-%d')}/{(fire_date + timedelta(days=interval)).strftime('%Y-%m-%d')}"
     '''print("Bounding box dell'incendio:", fire_geometry.bounds)
     print("Centro approssimato:", fire_geometry.centroid)'''
     print("Data dell'incendio:", fire_date.strftime('%Y-%m-%d'))
@@ -331,7 +373,7 @@ def process_landsat_pre(fire_geometry, fire_date, fire_id, SAVE_FOLDER, catalog,
         data_cube = np.stack(band_arrays_resampled, axis=0)
         profile.update(count=len(band_arrays_resampled))
 
-        cube_path = os.path.join(SAVE_FOLDER, f"fire_{fire_id}_{full_date_str}_pre_landsat.tif")
+        cube_path = os.path.join(SAVE_FOLDER, f"fire_{fire_id}_{full_date_str}_landsat.tif")
         with rasterio.open(cube_path, "w", **profile) as dst:
             dst.write(data_cube)
             dst.descriptions = band_names_resampled
@@ -371,11 +413,11 @@ def main():
     # Esecuzione per satellite
     # ----------------------------
     if satellite == "sentinel" or satellite == "all":
-        process_sentinel_pre(fire_geometry, fire_date, fire_id,SAVE_FOLDER,catalog,interval)
+        process_sentinel(fire_geometry, fire_date, fire_id,SAVE_FOLDER,catalog,interval)
     if satellite == "modis" or satellite == "all":
-        process_modis_pre(fire_geometry, fire_date, fire_id,SAVE_FOLDER,catalog,interval)
+        process_modis(fire_geometry, fire_date, fire_id,SAVE_FOLDER,catalog,interval)
     if satellite == "landsat" or satellite == "all":
-        process_landsat_pre(fire_geometry, fire_date, fire_id,SAVE_FOLDER,catalog,interval)
+        process_landsat(fire_geometry, fire_date, fire_id,SAVE_FOLDER,catalog,interval)
 
 if __name__ == "__main__":
     main()

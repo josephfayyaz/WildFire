@@ -18,5 +18,5 @@ def delete_tif_files_from_list(file_path):
 
 # Example usage:
 # Replace this with the actual file you're using each time
-file_to_process = 'src/project_name/eliminateNoData/ToBeDeletedPre.txt'
+file_to_process = 'src/fire/eliminateNoData/ToBeDeletedPre.txt'
 delete_tif_files_from_list(file_to_process)

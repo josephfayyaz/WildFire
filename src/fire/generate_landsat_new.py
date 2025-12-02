@@ -13,7 +13,7 @@ from rasterio.features import rasterize
 from PIL import Image
 
 # Funzioni di supporto
-def load_config(config_path="src/project_name/config.yaml"):
+def load_config(config_path="src/fire/config.yaml"):
     """Carica il file di configurazione YAML."""
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
@@ -399,8 +399,8 @@ if __name__ == "__main__":
         "image_similarity_tolerance": 0.005 # NUOVO
     }
     
-    os.makedirs("src/project_name", exist_ok=True)
-    config_path = "src/project_name/config.yaml" # Definisci il percorso del config
+    os.makedirs("src/fire", exist_ok=True)
+    config_path = "src/fire/config.yaml" # Definisci il percorso del config
     with open(config_path, "w") as f:
         yaml.dump(config_example, f)
     

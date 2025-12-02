@@ -16,4 +16,4 @@ source /etc/profile
 source ~/thesis-wildfire-danger-bavaro/.venv/bin/activate
 
 # Esegui lo script
-python src/project_name/generateEra5.py "${SLURM_ARRAY_TASK_ID}" "${SLURM_ARRAY_TASK_COUNT}"
+python src/fire/generateEra5.py "${SLURM_ARRAY_TASK_ID}" "${SLURM_ARRAY_TASK_COUNT}"

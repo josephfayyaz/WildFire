@@ -60,7 +60,7 @@ for root, dirs, files in os.walk(base_path):
                 print(f'Errore durante l\'analisi di {file_path}: {e}')
 
 # Salva su CSV
-output_dir = 'src/project_name/eliminateNoData'
+output_dir = 'src/fire/eliminateNoData'
 os.makedirs(output_dir, exist_ok=True)
 output_csv = os.path.join(output_dir, 'pixel_nodata_pre.csv')
 

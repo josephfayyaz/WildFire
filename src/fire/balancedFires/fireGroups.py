@@ -58,13 +58,13 @@ def create_balanced_id_lists(root_folder: str, small_threshold: int, large_thres
     print(f"Numero di incendi Grandi: {len(large_fire_ids)}")
 
     # Salva gli ID in file di testo per un facile riutilizzo
-    with open("src/project_name/balancedFires/small_fire_ids.txt", "w") as f:
+    with open("src/fire/balancedFires/small_fire_ids.txt", "w") as f:
         f.write('\n'.join(small_fire_ids))
     
-    with open("src/project_name/balancedFires/medium_fire_ids.txt", "w") as f:
+    with open("src/fire/balancedFires/medium_fire_ids.txt", "w") as f:
         f.write('\n'.join(medium_fire_ids))
 
-    with open("src/project_name/balancedFires/large_fire_ids.txt", "w") as f:
+    with open("src/fire/balancedFires/large_fire_ids.txt", "w") as f:
         f.write('\n'.join(large_fire_ids))
         
     print("\n🎉 Liste di ID salvate in 'small_fire_ids.txt', 'medium_fire_ids.txt', 'large_fire_ids.txt'.")

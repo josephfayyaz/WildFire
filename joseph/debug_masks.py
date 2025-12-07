@@ -1,8 +1,8 @@
 import numpy as np
 from dataset import PiedmontDataset
 
-ROOT_DIR = "piedmont_new"          # same as main.py
-GEOJSON_PATH = "path/to/your.geojson"  # same as main.py
+ROOT_DIR = "../data/"          # same as main.py
+GEOJSON_PATH = "../geojson/piedmont_2012_2024_fa.geojson"  # same as main.py
 TARGET_SIZE = (256, 256)
 
 

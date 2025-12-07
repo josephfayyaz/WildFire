@@ -26,7 +26,7 @@ def train(
             era5_raster,      # [B, 2, H, W]  (placeholder)
             era5_tabular,     # [B, 1]        (placeholder)
             landcover_input,  # [B, 1, H, W]  (placeholder, NOT GT)
-            gt_mask,          # [B, 1, H, W] OR [B, H, W] depending on augment/eval path
+            gt_mask,          # [B, 1, H, W] OR [B, H, W] depending on path
         )
 
     Baseline behavior:
@@ -37,6 +37,7 @@ def train(
     model.train()
 
     # Confusion matrix for burned area (binary)
+    # hist_ba[gt, pred]: rows = GT {0,1}, cols = prediction {0,1}
     hist_ba = np.zeros((2, 2), dtype=np.int64)
 
     total_loss = 0.0
@@ -105,7 +106,7 @@ def train(
         total_ba_loss += float(loss_burned_area.item())
         total_lc_loss += float(loss_landcover.item())
 
-        # --- Metrics: burned-area IoU ---
+        # --- Metrics: burned-area IoU components ---
         with torch.no_grad():
             # logits_ba: [B, 1, H, W], gt_mask_ch: [B, 1, H, W]
             predicted_ba = (torch.sigmoid(logits_ba) > 0.5).float()
@@ -118,6 +119,17 @@ def train(
     # Epoch-level metrics
     iou_ba = fire_area_iou(hist_ba)
 
+    # Derive precision, recall, F1 from confusion matrix
+    tn, fp, fn, tp = (
+        hist_ba[0, 0],
+        hist_ba[0, 1],
+        hist_ba[1, 0],
+        hist_ba[1, 1],
+    )
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+
     avg_total_loss = total_loss / max(1, len(dataloader))
     avg_ba_loss = total_ba_loss / max(1, len(dataloader))
     avg_land_loss = total_lc_loss / max(1, len(dataloader))  # stays 0.0
@@ -128,6 +140,9 @@ def train(
         writer.add_scalar("Loss/burned_area_train", avg_ba_loss, epoch)
         writer.add_scalar("Loss/landcover_train", avg_land_loss, epoch)
         writer.add_scalar("IoU/burned_area_train", iou_ba, epoch)
+        writer.add_scalar("Metrics/precision_train", precision, epoch)
+        writer.add_scalar("Metrics/recall_train", recall, epoch)
+        writer.add_scalar("Metrics/f1_train", f1, epoch)
 
     return avg_total_loss, avg_ba_loss, avg_land_loss, iou_ba
 
@@ -214,6 +229,16 @@ def val(
 
     iou_ba = fire_area_iou(hist_ba)
 
+    tn, fp, fn, tp = (
+        hist_ba[0, 0],
+        hist_ba[0, 1],
+        hist_ba[1, 0],
+        hist_ba[1, 1],
+    )
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+
     avg_total_loss = total_loss / max(1, len(dataloader))
     avg_ba_loss = loss_ba_sum / max(1, len(dataloader))
     avg_land_loss = loss_land_sum / max(1, len(dataloader))  # 0.0
@@ -223,5 +248,8 @@ def val(
         writer.add_scalar("Loss/burned_area_val", avg_ba_loss, epoch)
         writer.add_scalar("Loss/landcover_val", avg_land_loss, epoch)
         writer.add_scalar("IoU/burned_area_val", iou_ba, epoch)
+        writer.add_scalar("Metrics/precision_val", precision, epoch)
+        writer.add_scalar("Metrics/recall_val", recall, epoch)
+        writer.add_scalar("Metrics/f1_val", f1, epoch)
 
     return avg_total_loss, avg_ba_loss, avg_land_loss, iou_ba

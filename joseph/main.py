@@ -1,3 +1,4 @@
+
 import os
 import time
 import random
@@ -7,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import PiedmontDataset
@@ -25,15 +26,16 @@ GEOJSON_PATH = "../geojson/piedmont_2012_2024_fa.geojson"  # TODO: set this corr
 CHECKPOINT_DIR = "checkpoints"
 LOG_DIR_BASE = "runs"
 
-BATCH_SIZE = 1
-NUM_WORKERS = 2
 
-NUM_EPOCHS = 2
+BATCH_SIZE = 4
+NUM_WORKERS = 4
+
+NUM_EPOCHS = 40 
 LEARNING_RATE_MAIN = 1e-4
 WEIGHT_DECAY = 5e-4
 
 W_MASK = 1.0        # weight for burned-area loss
-W_LANDCOVER = 1.0   # weight for landcover loss
+W_LANDCOVER = 1.0   # weight for landcover loss (unused baseline, kept for API)
 
 TRAIN_SPLIT = 0.8   # 80% train / 20% val
 EARLY_STOPPING_PATIENCE = 20
@@ -41,8 +43,8 @@ EARLY_STOPPING_MIN_DELTA = 1e-3
 
 TARGET_SIZE: Tuple[int, int] = (256, 256)
 ENCODER_NAME = "resnet34"
-#ENCODER_WEIGHTS = "imagenet"
-ENCODER_WEIGHTS = None  # training offile- only for test working
+ENCODER_WEIGHTS = "imagenet"
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -95,6 +97,41 @@ class EarlyStopping:
             return False
 
 
+def compute_pos_weight(train_dataset) -> torch.Tensor:
+    """
+    Compute pos_weight for BCEWithLogitsLoss based on class imbalance
+    in the train_dataset GT masks.
+
+    pos_weight ~ (#negative_pixels / #positive_pixels)
+    """
+    import numpy as np
+
+    total_pos = 0
+    total_neg = 0
+
+    for idx in range(len(train_dataset)):
+        # dataset __getitem__ returns 7 elements; last one is gt_mask_tensor
+        *_, gt_mask_tensor = train_dataset[idx]  # (sentinel,..., landcover, gt_mask)
+
+        gt_np = gt_mask_tensor.numpy()
+        if gt_np.ndim == 3:
+            gt_np = gt_np[0]  # squeeze channel [1, H, W] -> [H, W]
+
+        pos = np.sum(gt_np > 0.5)
+        neg = np.sum(gt_np <= 0.5)
+
+        total_pos += pos
+        total_neg += neg
+
+    if total_pos == 0:
+        print("Warning: no positive pixels found when computing pos_weight. Using 1.0.")
+        return torch.tensor([1.0], dtype=torch.float32)
+
+    ratio = total_neg / max(1, total_pos)
+    print(f"Computed pos_weight = {ratio:.2f} (neg/pos ratio)")
+    return torch.tensor([ratio], dtype=torch.float32)
+
+
 def build_datasets_and_loaders():
     """
     Build train/val datasets and dataloaders.
@@ -124,7 +161,7 @@ def build_datasets_and_loaders():
 
     print(f"Total samples: {num_samples} -> Train: {train_size}, Val: {val_size}")
 
-    # Use random_split to get indices only
+    # Use simple shuffled split
     indices = list(range(num_samples))
     random.shuffle(indices)
     train_indices = indices[:train_size]
@@ -184,12 +221,12 @@ def build_model():
     """
     model = MultiModalFPN(
         in_channels_sentinel=12,          # Sentinel-2 bands
-        in_channels_landsat=16,          # Landsat + flag (even if zero in baseline)
-        in_channels_other_data=2,        # DEM + streets (concatenated)
-        in_channels_era5_raster=2,       # as defined in model.py
+        in_channels_landsat=16,           # Landsat + flag (even if zero in baseline)
+        in_channels_other_data=2,         # DEM + streets (concatenated)
+        in_channels_era5_raster=2,        # as defined in model.py
         in_channels_era5_tabular=1,
         in_channels_ignition_map=1,
-        num_classes=1,                   # burned area (binary)
+        num_classes=1,                    # burned area (binary)
         encoder_name=ENCODER_NAME,
         encoder_weights=ENCODER_WEIGHTS,
         landcover_classes=12,
@@ -212,6 +249,9 @@ def main():
     # Build data
     train_dataset, val_dataset, train_loader, val_loader = build_datasets_and_loaders()
 
+    # Compute pos_weight for imbalanced BCE
+    pos_weight = compute_pos_weight(train_dataset).to(DEVICE)
+
     # Build model and move to device
     model = build_model().to(DEVICE)
 
@@ -221,11 +261,13 @@ def main():
         lr=LEARNING_RATE_MAIN,
         weight_decay=WEIGHT_DECAY,
     )
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=NUM_EPOCHS, eta_min=5e-5)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=NUM_EPOCHS, eta_min=5e-5
+    )
 
     # Loss functions
-    burned_area_loss_fn = nn.BCEWithLogitsLoss()
-    landcover_loss_fn = nn.CrossEntropyLoss()
+    burned_area_loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    landcover_loss_fn = nn.CrossEntropyLoss()  # unused baseline, kept for API
 
     # Early stopping on validation IoU (burned area)
     early_stopping = EarlyStopping(
@@ -247,7 +289,7 @@ Experiment time: {current_time}
     DEM + Streets: placeholder (not used in baseline)
     ERA5 raster + tabular: placeholder (not used in baseline)
 - Split: {int(TRAIN_SPLIT * 100)}% train / {int((1 - TRAIN_SPLIT) * 100)}% val
-- Loss: BCEWithLogits (burned area), CrossEntropy (landcover)
+- Loss: BCEWithLogits (burned area) with pos_weight={pos_weight.item():.2f}, CrossEntropy (landcover)
 - Optimizer: Adam (lr={LEARNING_RATE_MAIN}, weight_decay={WEIGHT_DECAY})
 - Scheduler: CosineAnnealingLR (T_max={NUM_EPOCHS}, eta_min=5e-5)
 - Epochs: {NUM_EPOCHS} with EarlyStopping(patience={EARLY_STOPPING_PATIENCE}, min_delta={EARLY_STOPPING_MIN_DELTA})

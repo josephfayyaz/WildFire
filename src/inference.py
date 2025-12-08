@@ -2,8 +2,13 @@ import os
 import torch
 import torch.nn as nn
 
-from main import build_datasets_and_loaders, build_model, DEVICE, CHECKPOINT_DIR
+from main import build_datasets_and_loaders, build_model, DEVICE
 from train import val
+
+
+CHECKPOINT_DIR = "paras_model"
+
+checkpoint_path = os.path.join(CHECKPOINT_DIR, "unet_sentinel_best.pth")
 
 
 def run_inference_on_val():
@@ -12,7 +17,7 @@ def run_inference_on_val():
 
     # Build model and load best checkpoint
     model = build_model().to(DEVICE)
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
+    #checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
     state = torch.load(checkpoint_path, map_location=DEVICE)
     model.load_state_dict(state)
 

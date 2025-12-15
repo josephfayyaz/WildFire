@@ -165,7 +165,7 @@ class MultiModalFPN(nn.Module):
         self,
         in_channels_sentinel: int = N_BANDS_SENTINEL,
         in_channels_landsat: int = N_BANDS_LANDSAT_WITH_FLAG,
-        in_channels_other_data: int = N_BANDS_DEM + N_BANDS_STREETS,
+        in_channels_other_data: int = N_BANDS_DEM + N_BANDS_STREETS + N_BANDS_IGNITION,
         in_channels_era5_raster: int = N_BANDS_ERA5_RASTER,
         in_channels_era5_tabular: int = N_BANDS_ERA5_TABULAR,
         in_channels_ignition_map: int = N_BANDS_IGNITION,
@@ -199,28 +199,105 @@ class MultiModalFPN(nn.Module):
         self.in_channels_era5_tabular = in_channels_era5_tabular
         self.in_channels_ignition_map = in_channels_ignition_map
 
+        # Determine the channel dimension of the deepest encoder feature (Sentinel branch)
+        sentinel_deep_channels = self.encoder.out_channels[-1]
+        self.sentinel_deep_channels = sentinel_deep_channels
+
+        # Projection layers for each auxiliary modality. These layers map the input channels
+        # of each modality to the same channel dimension as the deepest Sentinel feature map.
+        self.landsat_proj = nn.Conv2d(
+            self.in_channels_landsat, sentinel_deep_channels, kernel_size=1
+        )
+        self.other_proj = nn.Conv2d(
+            self.in_channels_other_data, sentinel_deep_channels, kernel_size=1
+        )
+        self.era5_raster_proj = nn.Conv2d(
+            self.in_channels_era5_raster, sentinel_deep_channels, kernel_size=1
+        )
+
+        # Project ERA5 tabular (scalar) to match spatial features using a small linear layer
+        self.era5_tabular_proj = nn.Linear(
+            self.in_channels_era5_tabular, sentinel_deep_channels
+        )
+
+        # Fusion block to combine Sentinel and auxiliary modalities at the deepest scale.
+        # We fuse five modalities: Sentinel deep features, Landsat, other_data, ERA5 raster, and ERA5 tabular.
+        self.fusion_block = AdvancedCrossModalFusionBlock(
+            channel_dims=[sentinel_deep_channels] * 5,
+            output_channels=sentinel_deep_channels,
+        )
+
     def forward(
         self,
         sentinel_image: torch.Tensor,
         landsat_image: torch.Tensor,
-        dem_image: torch.Tensor,
+        other_data: torch.Tensor,
         ignition_map: torch.Tensor,
         era5_raster: torch.Tensor,
         era5_tabular,
     ):
         """
-        Baseline forward: only Sentinel is used.
+        Forward pass for the multimodal model.
 
         Args:
-            sentinel_image: (B, C_sentinel, H, W)
-            landsat_image: unused (kept for compatibility)
-            dem_image: unused
-            ignition_map: unused
-            era5_raster: unused
-            era5_tabular: unused
+            sentinel_image: Tensor of shape (B, C_sentinel, H, W)
+            landsat_image: Tensor of shape (B, C_landsat, H, W)
+            other_data: Tensor of shape (B, C_other, H, W) (DEM + streets + ignition)
+            ignition_map: Unused dummy tensor kept for API compatibility
+            era5_raster: Tensor of shape (B, C_era5_raster, H, W)
+            era5_tabular: Tensor of shape (B, C_era5_tabular)
 
         Returns:
             burned_area_mask, landcover_mask
         """
-        burned_area_mask, landcover_mask = self.base_fpn(sentinel_image)
+        # Extract Sentinel encoder features
+        features = self.encoder(sentinel_image)
+        deep_feat = features[-1]
+        target_h, target_w = deep_feat.shape[2], deep_feat.shape[3]
+
+        # Project and pool Landsat
+        landsat_feat = self.landsat_proj(landsat_image)
+        landsat_feat = torch.nn.functional.adaptive_avg_pool2d(
+            landsat_feat, (target_h, target_w)
+        )
+
+        # Project and pool other data (DEM + streets + ignition)
+        other_feat = self.other_proj(other_data)
+        other_feat = torch.nn.functional.adaptive_avg_pool2d(
+            other_feat, (target_h, target_w)
+        )
+
+        # Project and pool ERA5 raster
+        era5_feat = self.era5_raster_proj(era5_raster)
+        era5_feat = torch.nn.functional.adaptive_avg_pool2d(
+            era5_feat, (target_h, target_w)
+        )
+
+        # Project ERA5 tabular and expand spatially
+        era5_tab_feat = self.era5_tabular_proj(era5_tabular)
+        era5_tab_feat = era5_tab_feat.unsqueeze(-1).unsqueeze(-1)
+        era5_tab_feat = era5_tab_feat.expand(
+            -1, -1, target_h, target_w
+        )
+
+        # Fuse deepest features
+        fused = self.fusion_block(
+            [
+                deep_feat,
+                landsat_feat,
+                other_feat,
+                era5_feat,
+                era5_tab_feat,
+            ]
+        )
+
+        # Replace deepest Sentinel feature with fused feature
+        fused_features = list(features)
+        fused_features[-1] = fused
+
+        # Decode and produce outputs
+        decoder_output = self.decoder(fused_features)
+        burned_area_mask = self.ba_segmentation_head(decoder_output)
+        landcover_mask = self.lc_segmentation_head(decoder_output)
+
         return burned_area_mask, landcover_mask

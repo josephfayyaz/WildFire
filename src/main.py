@@ -26,6 +26,9 @@ GEOJSON_PATH = "../geojson/piedmont_2012_2024_fa.geojson"  # TODO: set this corr
 CHECKPOINT_DIR = "checkpoints"
 LOG_DIR_BASE = "runs"
 
+model_name = "best_model_2.pth"
+
+
 
 BATCH_SIZE = 4
 NUM_WORKERS = 4
@@ -222,7 +225,7 @@ def build_model():
     model = MultiModalFPN(
         in_channels_sentinel=12,          # Sentinel-2 bands
         in_channels_landsat=16,           # Landsat + flag (even if zero in baseline)
-        in_channels_other_data=2,         # DEM + streets (concatenated)
+        in_channels_other_data=3,         # DEM + streets (concatenated)
         in_channels_era5_raster=2,        # as defined in model.py
         in_channels_era5_tabular=1,
         in_channels_ignition_map=1,
@@ -342,7 +345,7 @@ Experiment time: {current_time}
         # Checkpoint best model
         if val_iou_ba > best_iou:
             best_iou = val_iou_ba
-            checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
+            checkpoint_path = os.path.join(CHECKPOINT_DIR, model_name)   
             torch.save(model.state_dict(), checkpoint_path)
             writer.add_text(
                 "Checkpoint",

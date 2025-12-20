@@ -44,6 +44,8 @@ def train(
     total_ba_loss = 0.0
     total_lc_loss = 0.0  # stays 0.0 in this baseline
 
+    printed_device_info = False
+
     for batch_idx, batch in enumerate(dataloader):
         (
             image_sentinel,
@@ -55,13 +57,24 @@ def train(
             gt_mask,
         ) = batch
 
-        image_sentinel = image_sentinel.to(device)
-        image_landsat = image_landsat.to(device)
-        other_data = other_data.to(device)
-        era5_raster = era5_raster.to(device)
-        era5_tabular = era5_tabular.to(device)
-        landcover_input = landcover_input.to(device)  # unused, but moved for completeness
-        gt_mask = gt_mask.to(device)
+        # Move tensors to device (non_blocking works with pin_memory=True in DataLoader)
+        image_sentinel = image_sentinel.to(device, non_blocking=True)
+        image_landsat = image_landsat.to(device, non_blocking=True)
+        other_data = other_data.to(device, non_blocking=True)
+        era5_raster = era5_raster.to(device, non_blocking=True)
+        era5_tabular = era5_tabular.to(device, non_blocking=True)
+        landcover_input = landcover_input.to(device, non_blocking=True)  # unused, but moved for completeness
+        gt_mask = gt_mask.to(device, non_blocking=True)
+
+        # Print once per epoch: confirm model + batch are on the expected device
+        if not printed_device_info:
+            try:
+                print(f"[train][epoch {epoch}] device={device} | model_param_device={next(model.parameters()).device} "
+                      f"| batch_sentinel_device={image_sentinel.device}")
+            except StopIteration:
+                print(f"[train][epoch {epoch}] device={device} | model has no parameters? (unexpected) "
+                      f"| batch_sentinel_device={image_sentinel.device}")
+            printed_device_info = True
 
         # Ensure mask has shape [B, 1, H, W] for BCEWithLogitsLoss
         if gt_mask.dim() == 3:  # [B, H, W] -> [B, 1, H, W]
@@ -171,6 +184,8 @@ def val(
     loss_ba_sum = 0.0
     loss_land_sum = 0.0  # stays 0.0
 
+    printed_device_info = False
+
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
             (
@@ -183,13 +198,22 @@ def val(
                 gt_mask,
             ) = batch
 
-            image_sentinel = image_sentinel.to(device)
-            image_landsat = image_landsat.to(device)
-            other_data = other_data.to(device)
-            era5_raster = era5_raster.to(device)
-            era5_tabular = era5_tabular.to(device)
-            landcover_input = landcover_input.to(device)
-            gt_mask = gt_mask.to(device)
+            image_sentinel = image_sentinel.to(device, non_blocking=True)
+            image_landsat = image_landsat.to(device, non_blocking=True)
+            other_data = other_data.to(device, non_blocking=True)
+            era5_raster = era5_raster.to(device, non_blocking=True)
+            era5_tabular = era5_tabular.to(device, non_blocking=True)
+            landcover_input = landcover_input.to(device, non_blocking=True)
+            gt_mask = gt_mask.to(device, non_blocking=True)
+
+            if not printed_device_info:
+                try:
+                    print(f"[val][epoch {epoch}] device={device} | model_param_device={next(model.parameters()).device} "
+                          f"| batch_sentinel_device={image_sentinel.device}")
+                except StopIteration:
+                    print(f"[val][epoch {epoch}] device={device} | model has no parameters? (unexpected) "
+                          f"| batch_sentinel_device={image_sentinel.device}")
+                printed_device_info = True
 
             # Ensure mask has shape [B, 1, H, W]
             if gt_mask.dim() == 3:  # [B, H, W]

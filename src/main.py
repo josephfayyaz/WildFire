@@ -1,4 +1,3 @@
-
 import os
 import time
 import random
@@ -26,14 +25,12 @@ GEOJSON_PATH = "../geojson/piedmont_2012_2024_fa.geojson"  # TODO: set this corr
 CHECKPOINT_DIR = "checkpoints"
 LOG_DIR_BASE = "runs"
 
-model_name = "best_model_2.pth"
-
-
+model_name = "best_model_2_test.pth"
 
 BATCH_SIZE = 4
 NUM_WORKERS = 4
 
-NUM_EPOCHS = 40 
+NUM_EPOCHS = 3
 LEARNING_RATE_MAIN = 1e-4
 WEIGHT_DECAY = 5e-4
 
@@ -65,6 +62,39 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
+
+
+def device_diagnostics(device: torch.device):
+    """
+    Print an explicit report at startup showing whether CUDA is actually available
+    and whether we will run on GPU or CPU. Also runs a tiny CUDA op to prove it.
+    """
+    print("\n================ DEVICE DIAGNOSTICS ================")
+    print("Selected DEVICE:", device)
+    print("torch version:", torch.__version__)
+    print("torch.version.cuda:", torch.version.cuda)
+    print("CUDA available (torch.cuda.is_available):", torch.cuda.is_available())
+
+    if torch.cuda.is_available():
+        try:
+            n = torch.cuda.device_count()
+            print("CUDA device count:", n)
+            for i in range(n):
+                print(f"  GPU[{i}]:", torch.cuda.get_device_name(i))
+            print("Current CUDA device index:", torch.cuda.current_device())
+
+            # Proof-of-life: tiny op on GPU (forces actual CUDA execution)
+            x = torch.randn(512, 512, device="cuda")
+            y = (x @ x).mean()
+            torch.cuda.synchronize()
+            print("CUDA proof-of-life op: OK | result:", float(y))
+        except Exception as e:
+            print("CUDA is reported available, but GPU test op failed:", repr(e))
+            print("This usually indicates a driver/runtime mismatch.")
+    else:
+        print("CUDA NOT available to PyTorch -> training will run on CPU.")
+        print("If nvidia-smi works, this usually means you installed a CPU-only torch build.")
+    print("====================================================\n")
 
 
 class EarlyStopping:
@@ -240,6 +270,9 @@ def build_model():
 def main():
     set_seed(42)
 
+    # Print explicit device status at startup (GPU vs CPU)
+    device_diagnostics(DEVICE)
+
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
     os.makedirs(LOG_DIR_BASE, exist_ok=True)
 
@@ -257,6 +290,12 @@ def main():
 
     # Build model and move to device
     model = build_model().to(DEVICE)
+
+    # Confirm model actually sits on the selected device
+    try:
+        print("Model device (first param):", next(model.parameters()).device)
+    except StopIteration:
+        print("Warning: model has no parameters? (unexpected)")
 
     # Optimizer & scheduler
     optimizer = optim.Adam(
@@ -297,6 +336,7 @@ Experiment time: {current_time}
 - Scheduler: CosineAnnealingLR (T_max={NUM_EPOCHS}, eta_min=5e-5)
 - Epochs: {NUM_EPOCHS} with EarlyStopping(patience={EARLY_STOPPING_PATIENCE}, min_delta={EARLY_STOPPING_MIN_DELTA})
 - Batch size: {BATCH_SIZE}
+- Device: {DEVICE}
 """
     writer.add_text("Experiment/Notes", experiment_notes, global_step=0)
 
@@ -345,7 +385,7 @@ Experiment time: {current_time}
         # Checkpoint best model
         if val_iou_ba > best_iou:
             best_iou = val_iou_ba
-            checkpoint_path = os.path.join(CHECKPOINT_DIR, model_name)   
+            checkpoint_path = os.path.join(CHECKPOINT_DIR, model_name)
             torch.save(model.state_dict(), checkpoint_path)
             writer.add_text(
                 "Checkpoint",

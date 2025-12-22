@@ -6,9 +6,9 @@ from main import build_datasets_and_loaders, build_model, DEVICE
 from train import val
 
 
-CHECKPOINT_DIR = "checkpoints"
+CHECKPOINT_DIR = "checkpoint_2"
 
-checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model_2.pth")
+checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model_3.pth")
 
 
 def run_inference_on_val():

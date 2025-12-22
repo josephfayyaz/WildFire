@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="reinforce_2" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="reinforce_2" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="wildfire" project-jdk-type="Python SDK" />
 </project>

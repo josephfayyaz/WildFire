@@ -22,7 +22,7 @@ from train import train, val
 ROOT_DIR = "../data/"  # root directory containing fire_* folders
 GEOJSON_PATH = "../geojson/piedmont_2012_2024_fa.geojson"  # TODO: set this correctly
 
-CHECKPOINT_DIR = "checkpoints"
+CHECKPOINT_DIR = "checkpoint_2"
 LOG_DIR_BASE = "runs"
 
 model_name = "best_model_3.pth"

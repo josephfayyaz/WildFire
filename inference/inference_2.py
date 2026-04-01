@@ -1,7 +1,15 @@
 
 import os
+import sys
+from pathlib import Path
+
 import torch
 import torch.nn as nn
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MULTIMODAL_DIR = PROJECT_ROOT / "src" / "multimodal"
+if str(MULTIMODAL_DIR) not in sys.path:
+    sys.path.insert(0, str(MULTIMODAL_DIR))
 
 from main import (
     build_datasets_and_loaders,
@@ -24,7 +32,7 @@ def run_inference_on_val():
     # Load model
     model = build_model().to(DEVICE)
 
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, model_name)
+    checkpoint_path = Path(CHECKPOINT_DIR) / model_name
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(
             f"Checkpoint not found: {checkpoint_path}\n"

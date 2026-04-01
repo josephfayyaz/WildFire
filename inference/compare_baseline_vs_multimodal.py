@@ -7,31 +7,38 @@ Fixes your error by:
   not MultiModalFPN.
 
 Outputs:
-  Results/model_comparison/comparison_table.png
-  Results/model_comparison/comparison_metrics_bars.png
-  Results/model_comparison/baseline_quick_thresholds.csv
-  Results/model_comparison/comparison_metrics.csv
+  docs/experiments/model-comparison/comparison_table.png
+  docs/experiments/model-comparison/comparison_metrics_bars.png
+  docs/experiments/model-comparison/baseline_quick_thresholds.csv
+  docs/experiments/model-comparison/comparison_metrics.csv
 """
 
 import os
+import sys
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MULTIMODAL_DIR = PROJECT_ROOT / "src" / "multimodal"
+BASELINE_DIR = PROJECT_ROOT / "src" / "baseline_singlemodal"
+if str(MULTIMODAL_DIR) not in sys.path:
+    sys.path.insert(0, str(MULTIMODAL_DIR))
+
 # ----------------------------
 # Hardcoded paths
 # ----------------------------
-OUT_DIR = "Results/model_comparison"
-os.makedirs(OUT_DIR, exist_ok=True)
+OUT_DIR = PROJECT_ROOT / "docs" / "experiments" / "model-comparison"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-BASELINE_CKPT = "Baseline_model/unet_sentinel_best.pth"
+BASELINE_CKPT = BASELINE_DIR / "unet_sentinel_best.pth"
 
 METRICS_CANDIDATE_PATHS = [
-    "slide_figures/tables/metrics_summary.csv",
-    "slide_figures/tables/metrics_summary.csv",
-    "metrics_summary.csv",
+    PROJECT_ROOT / "docs" / "figures" / "slide-deck" / "tables" / "metrics_summary.csv",
+    PROJECT_ROOT / "metrics_summary.csv",
 ]
 
 # CPU quick settings (MacBook friendly)
@@ -81,8 +88,8 @@ MULTIMODAL_CONFIG = {
 def find_metrics_csv() -> str:
     for p in METRICS_CANDIDATE_PATHS:
         if os.path.exists(p):
-            return p
-    for root, _, files in os.walk("."):
+            return str(p)
+    for root, _, files in os.walk(PROJECT_ROOT):
         if "metrics_summary.csv" in files:
             return os.path.join(root, "metrics_summary.csv")
     raise FileNotFoundError("Could not find metrics_summary.csv anywhere in this repo.")

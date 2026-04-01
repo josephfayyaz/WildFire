@@ -1,13 +1,20 @@
 import os
+import sys
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from main import build_datasets_and_loaders, build_model, DEVICE, CHECKPOINT_DIR
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MULTIMODAL_DIR = PROJECT_ROOT / "src" / "multimodal"
+if str(MULTIMODAL_DIR) not in sys.path:
+    sys.path.insert(0, str(MULTIMODAL_DIR))
 
-VIS_DIR = "inference_maps"
+from main import build_datasets_and_loaders, build_model, DEVICE, CHECKPOINT_DIR, model_name
+
+VIS_DIR = PROJECT_ROOT / "docs" / "figures" / "validation-maps"
 
 
 def _extract_burned_logits(model_output: Any) -> torch.Tensor:
@@ -101,11 +108,11 @@ def visualize_val_samples(
 
     # Load model + checkpoint
     model = build_model().to(DEVICE)
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
+    checkpoint_path = Path(CHECKPOINT_DIR) / model_name
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(
             f"Checkpoint not found at {checkpoint_path}. "
-            "Train the model first so that 'best_model.pth' exists."
+            f"Train the model first so that '{model_name}' exists."
         )
 
     state = torch.load(checkpoint_path, map_location=DEVICE)
@@ -207,11 +214,11 @@ def run_inference_on_single_tile(tile_path: str, output_path: str) -> None:
     """
     # Load model
     model = build_model().to(DEVICE)
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
+    checkpoint_path = Path(CHECKPOINT_DIR) / model_name
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(
             f"Checkpoint not found at {checkpoint_path}. "
-            "Train the model first so that 'best_model.pth' exists."
+            f"Train the model first so that '{model_name}' exists."
         )
 
     state = torch.load(checkpoint_path, map_location=DEVICE)

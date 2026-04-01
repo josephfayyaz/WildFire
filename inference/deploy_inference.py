@@ -1,18 +1,26 @@
 import os
+import sys
+from pathlib import Path
+
 import torch
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MULTIMODAL_DIR = PROJECT_ROOT / "src" / "multimodal"
+if str(MULTIMODAL_DIR) not in sys.path:
+    sys.path.insert(0, str(MULTIMODAL_DIR))
 
 from main import build_model, DEVICE, CHECKPOINT_DIR, model_name
 from dataset import PiedmontDataset
 
 # ---- DEPLOY CONFIG ----
 THRESHOLD = 0.95  # chosen from val sweep
-ROOT_DIR = "../data/"
-GEOJSON_PATH = "../geojson/piedmont_2012_2024_fa.geojson"
+ROOT_DIR = PROJECT_ROOT / "data"
+GEOJSON_PATH = PROJECT_ROOT / "data" / "geojson" / "piedmont_2012_2024_fa.geojson"
 TARGET_SIZE = (256, 256)
 
-OUTPUT_DIR = "deploy_outputs"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = PROJECT_ROOT / "outputs" / "inference-samples"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 @torch.no_grad()
 def predict_one_sample(model, sample):
@@ -64,7 +72,7 @@ def predict_one_sample(model, sample):
 def main():
     # Load model
     model = build_model().to(DEVICE)
-    ckpt = os.path.join(CHECKPOINT_DIR, model_name)
+    ckpt = Path(CHECKPOINT_DIR) / model_name
     model.load_state_dict(torch.load(ckpt, map_location=DEVICE))
     model.eval()
 
@@ -82,8 +90,8 @@ def main():
     # Run a few samples
     for idx in [0, 1, 2, 3, 4]:
         prob, mask = predict_one_sample(model, ds[idx])
-        np.save(os.path.join(OUTPUT_DIR, f"prob_{idx}.npy"), prob)
-        np.save(os.path.join(OUTPUT_DIR, f"mask_{idx}.npy"), mask)
+        np.save(OUTPUT_DIR / f"prob_{idx}.npy", prob)
+        np.save(OUTPUT_DIR / f"mask_{idx}.npy", mask)
         print(f"[saved] idx={idx} prob->prob_{idx}.npy mask->mask_{idx}.npy")
 
     print(f"Done. Threshold used: {THRESHOLD}. Outputs in: {OUTPUT_DIR}")
